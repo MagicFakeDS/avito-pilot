@@ -117,7 +117,7 @@ export function loadCustomSkills() {
   try { arr = JSON.parse(readSafe(path.join(DATA_DIR, 'skills.json')) || '[]'); } catch { return []; }
   const added = [];
   for (const s of Array.isArray(arr) ? arr : []) {
-    if (!s || !s.id || !s.system || BUILTIN.some((b) => b.id === s.id)) continue;
+    if (!s || !s.id || !s.system || BUILTIN.some((b) => b.id === s.id) || ['market', 'schedule', 'unclear'].includes(String(s.id))) continue;
     const id = String(s.id);
     const usesMarket = s.usesMarket !== false;
     tools[id] = (text, report, opts) =>

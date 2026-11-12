@@ -1,7 +1,7 @@
 import { askClaudeJSON, askClaudeStream } from './claude.js';
 import { analyze } from './analytics.js';
 import { viewStats } from './ai.js';
-import { marketContext } from './tools.js';
+import { marketContext, customSkills } from './tools.js';
 import { toMessages, transcript } from './dialog.js';
 
 const nullable = (t) => ({ anyOf: [{ type: t }, { type: 'null' }] });
@@ -11,7 +11,7 @@ const PLAN_SCHEMA = {
   additionalProperties: false,
   required: ['intent', 'cityName', 'citySlug', 'query', 'pages', 'clarify', 'scheduleAction', 'times', 'schedulePages'],
   properties: {
-    intent: { type: 'string', enum: ['market', 'schedule', 'write', 'price', 'audit', 'reply', 'chat', 'unclear'] },
+    intent: { type: 'string', enum: ['market', 'schedule', 'write', 'price', 'audit', 'reply', 'chat', 'unclear', ...customSkills.map((s) => s.id)] },
     cityName: nullable('string'),
     citySlug: nullable('string'),
     query: nullable('string'),
@@ -74,7 +74,11 @@ intent:
 
 Для всех интентов, кроме "schedule": scheduleAction, times и schedulePages = null.
 Для write/price/audit/reply/chat город и query = null, pages = 1, clarify = null.
-Для "unclear" или если для market не хватает города — заполни clarify коротким вопросом; иначе clarify = null.`;
+Для "unclear" или если для market не хватает города — заполни clarify коротким вопросом; иначе clarify = null.`
+  + (customSkills.length
+    ? '\n\nДополнительные скиллы — выбирай такой intent ТОЛЬКО если запрос явно про это (иначе chat/market):\n'
+      + customSkills.map((s) => `- "${s.id}" — ${s.desc || s.name}`).join('\n')
+    : '');
 
 export async function planTask(text, history = []) {
   const content = history.length

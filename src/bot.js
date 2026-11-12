@@ -7,7 +7,7 @@ import { startCaptchaSession, getCaptchaSession } from './fetch-avito.js';
 import { buildWorkbook, excelName } from './excel.js';
 import { planTask as defaultPlan, answerMarket as defaultAnswer, searchUrl } from './agent.js';
 import { generateInsights } from './ai.js';
-import { tools as defaultTools } from './tools.js';
+import { tools as defaultTools, skillList } from './tools.js';
 import { humanError } from './claude.js';
 import { htmlToText, entitiesToText } from './page-text.js';
 import { makeSnapshot, compareSnapshots, watchMarkdown, watchMemo, summarizeWatch } from './watch.js';
@@ -616,13 +616,14 @@ export function startBot({
     const userId = ctx.from.id;
     lastTool.set(userId, { mode, text, reportId });
     nameTask(reportId, text);
+    const skillName = skillList().find((s) => s.id === mode)?.name || 'Выполняю';
     const label = {
       write: ['Пишу объявление', 'Пишу объявление…'],
       price: ['Подбираю цену', 'Подбираю цену…'],
       audit: ['Проверяю объявление', 'Проверяю объявление…'],
       reply: ['Готовлю ответ покупателю', 'Готовлю ответ покупателю…'],
       chat: ['Отвечаю', 'Думаю…'],
-    }[mode];
+    }[mode] || [skillName, skillName + '…'];
     await startStatus(ctx, `${label[0]}, ответ ниже.`);
     try {
       const { markdown, stopped, text: out } = await streamAnswer(ctx, {
@@ -684,7 +685,7 @@ export function startBot({
         return applySchedule(ctx, report, p, text);
       }
 
-      if (TOOL_NAMES.includes(p.intent)) {
+      if (toolset[p.intent]) {
         if (!spend(userId)) return ctx.api.editMessageText(ctx.chat.id, status.message_id, limitMsg);
         await ctx.api.deleteMessage(ctx.chat.id, status.message_id).catch(() => {});
         const runId = store.addRun(report.id, { kind: p.intent, question: text });

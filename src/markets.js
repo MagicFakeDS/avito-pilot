@@ -2,25 +2,22 @@ import { fetchIntoReport as fetchAvito, isSearchUrl as isAvitoUrl, fetchDetailsI
 import { fetchWbIntoReport, isWbUrl } from './fetch-wb.js';
 import { fetchOzonIntoReport, isOzonUrl } from './fetch-ozon.js';
 
-export function detectMarket(raw) {
-  if (isAvitoUrl(raw)) return 'avito';
-  if (isWbUrl(raw)) return 'wb';
-  if (isOzonUrl(raw)) return 'ozon';
-  return null;
-}
+const MARKETS = [
+  { id: 'avito', name: 'Авито', test: isAvitoUrl, fetch: fetchAvito, views: true },
+  { id: 'wb', name: 'Wildberries', test: isWbUrl, fetch: fetchWbIntoReport },
+  { id: 'ozon', name: 'Ozon', test: isOzonUrl, fetch: fetchOzonIntoReport },
+];
 
-export const isMarketUrl = (u) => detectMarket(u) !== null;
+const find = (u) => MARKETS.find((m) => { try { return m.test(u); } catch { return false; } });
 
-export const supportsViews = (u) => detectMarket(u) === 'avito';
-
-const NAMES = { avito: 'Авито', wb: 'Wildberries', ozon: 'Ozon' };
-export const marketName = (u) => NAMES[detectMarket(u)] || 'маркетплейс';
+export const detectMarket = (u) => find(u)?.id || null;
+export const isMarketUrl = (u) => !!find(u);
+export const supportsViews = (u) => !!find(u)?.views;
+export const marketName = (u) => find(u)?.name || 'маркетплейс';
+export const markets = MARKETS.map(({ id, name }) => ({ id, name }));
 
 export function fetchIntoReport(store, reportId, url, opts = {}) {
-  const m = detectMarket(url);
-  if (m === 'wb') return fetchWbIntoReport(store, reportId, url, opts);
-  if (m === 'ozon') return fetchOzonIntoReport(store, reportId, url, opts);
-  return fetchAvito(store, reportId, url, opts);
+  return (find(url) || MARKETS[0]).fetch(store, reportId, url, opts);
 }
 
 export { fetchDetailsIntoReport };
