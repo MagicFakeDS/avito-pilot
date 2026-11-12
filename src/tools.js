@@ -1,6 +1,21 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { askClaudeStream } from './claude.js';
 import { analyze } from './analytics.js';
 import { toMessages } from './dialog.js';
+
+const DATA_DIR = process.env.DB_FILE ? path.dirname(process.env.DB_FILE) : 'data';
+const readSafe = (p) => { try { return fs.readFileSync(p, 'utf8').trim(); } catch { return ''; } };
+
+let _instr;
+export function customInstructions() {
+  if (_instr === undefined) _instr = (process.env.CUSTOM_INSTRUCTIONS || readSafe(path.join(DATA_DIR, 'instructions.md'))).slice(0, 4000);
+  return _instr;
+}
+const withInstructions = (system) => {
+  const ci = customInstructions();
+  return ci ? `${system}\n\nДополнительные указания продавца — учитывай во всех ответах:\n${ci}` : system;
+};
 
 const COMMON = `Это продолжение диалога в одной задаче: учитывай, что обсуждалось раньше, и понимай
 уточнения («сделай короче», «а для другого товара», «перепиши без эмодзи»).
@@ -79,7 +94,7 @@ const CHAT = `Тебя зовут Максим, ты помощник прода
 ${COMMON}`;
 
 const run = (system, content, effort, opts = {}) =>
-  askClaudeStream({ system, messages: toMessages(opts.history, content), effort, onText: opts.onText, signal: opts.signal });
+  askClaudeStream({ system: withInstructions(system), messages: toMessages(opts.history, content), effort, onText: opts.onText, signal: opts.signal });
 
 export const tools = {
   write: (text, report, opts) => run(WRITE, withMarket(`Товар/услуга:\n${text}`, marketContext(report, 40)), 'medium', opts),
@@ -88,3 +103,29 @@ export const tools = {
   reply: (text, _report, opts) => run(REPLY, `Сообщение покупателя:\n${text}`, 'low', opts),
   chat: (text, report, opts) => run(CHAT, withMarket(text, marketContext(report, 60)), 'medium', opts),
 };
+
+const BUILTIN = [
+  { id: 'write', name: 'Написать объявление', desc: 'заголовки и описание по товару' },
+  { id: 'price', name: 'Подобрать цену', desc: 'цена и стратегии по рынку' },
+  { id: 'audit', name: 'Проверить объявление', desc: 'оценка и правки' },
+  { id: 'reply', name: 'Ответ покупателю', desc: 'готовый ответ в чат' },
+  { id: 'chat', name: 'Вопрос', desc: 'ответ по рынку задачи' },
+];
+
+export function loadCustomSkills() {
+  let arr;
+  try { arr = JSON.parse(readSafe(path.join(DATA_DIR, 'skills.json')) || '[]'); } catch { return []; }
+  const added = [];
+  for (const s of Array.isArray(arr) ? arr : []) {
+    if (!s || !s.id || !s.system || BUILTIN.some((b) => b.id === s.id)) continue;
+    const id = String(s.id);
+    const usesMarket = s.usesMarket !== false;
+    tools[id] = (text, report, opts) =>
+      run(String(s.system), usesMarket ? withMarket(text, marketContext(report, s.limit || 60)) : text, s.effort || 'medium', opts);
+    added.push({ id, name: String(s.name || id), desc: String(s.desc || '') });
+  }
+  return added;
+}
+
+export const customSkills = loadCustomSkills();
+export const skillList = () => [...BUILTIN, ...customSkills];
