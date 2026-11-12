@@ -1,0 +1,26 @@
+{
+  "name": "avito-market-report",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Telegram-бот и сайт: Claude разбирает скопированную выдачу Авито и строит отчёт",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node test/extract-dom.test.mjs && node test/fallback.test.mjs && node test/item.test.mjs && node test/docs.test.mjs && node test/bot.test.mjs",
+    "avito:login": "node src/avito-login.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
+    "exceljs": "^4.4.0",
+    "grammy": "^1.46.0",
+    "node-html-parser": "^9.0.4"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.64.1"
+  }
+}
