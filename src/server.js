@@ -12,7 +12,7 @@ import { generateInsights, streamInsights, streamDemand, FAST_MODEL, EXT_PERSONA
 import { answerMarket } from './agent.js';
 import { buildWorkbook, excelName } from './excel.js';
 import { parseIntoReport } from './extract.js';
-import { humanError, isAuthError, askClaude, askClaudeStream, askClaudeJSON, getClient, MODEL } from './claude.js';
+import { humanError, isAuthError, askClaude, askClaudeStream, askClaudeJSON, agentStep, MODEL } from './claude.js';
 import { startBot } from './bot.js';
 import { toMessages } from './dialog.js';
 import { createDocs } from './docs.js';
@@ -111,10 +111,9 @@ const routes = [
     const messages = agentMessages(body.messages);
     if (!messages.length) return json({ error: 'Пустая задача' }, 400, extCors(origin));
     try {
-      const client = await getClient();
-      const r = await client.beta.messages.create({ model: MODEL, max_tokens: 2500, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default', system: AGENT_SYSTEM, tools: AGENT_TOOLS, messages });
-      const content = r.content.filter((b) => b.type === 'text' || b.type === 'tool_use').map((b) => (b.type === 'text' ? { type: 'text', text: b.text } : { type: 'tool_use', id: b.id, name: b.name, input: b.input }));
-      return json({ content, stop_reason: r.stop_reason }, 200, extCors(origin));
+      const content = await agentStep({ system: AGENT_SYSTEM, tools: AGENT_TOOLS, messages });
+      const stop_reason = content.some((b) => b.type === 'tool_use') ? 'tool_use' : 'end_turn';
+      return json({ content, stop_reason }, 200, extCors(origin));
     } catch (err) {
       return json({ error: humanError(err) }, 200, extCors(origin));
     }
@@ -127,10 +126,8 @@ const routes = [
     if (!text) return json({ error: 'Пустое сообщение' }, 400, extCors(origin));
     const page = ['search', 'item', 'other', 'none'].includes(body.page) ? body.page : 'other';
     try {
-      const client = await getClient();
-      const r = await client.messages.create({ model: FAST_MODEL, max_tokens: 300, system: INTENT_SYSTEM,
+      const { text: raw } = await askClaude({ model: FAST_MODEL, maxTokens: 300, effort: 'low', system: INTENT_SYSTEM,
         messages: [{ role: 'user', content: JSON.stringify({ message: text, page, itemsOnPage: Number(body.items) || 0, hasReport: !!body.hasReport, hasViews: !!body.hasViews, currentSite: String(body.siteName || body.site || '').slice(0, 40) }) }] });
-      const raw = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
       let t = {}; try { t = JSON.parse((raw.match(/\{[\s\S]*\}/) || ['{}'])[0]); } catch {}
       const action = ['analyze', 'agent', 'chat'].includes(t.action) ? t.action : 'chat';
       return json({ action, query: String(t.query || '').replace(/\s+/g, ' ').trim().slice(0, 120), pages: Math.max(0, Math.min(20, Math.round(Number(t.pages)) || 0)), city: /^[a-z][a-z_-]{1,40}$/.test(String(t.city || '')) ? String(t.city) : '', site: ['avito', 'wb', 'ozon', 'ym', 'mm', 'ali', 'lamoda', 'dns', 'mvideo', 'citilink'].includes(t.site) ? t.site : '' }, 200, extCors(origin));
@@ -254,12 +251,10 @@ const routes = [
     if (image) { mm = image.match(/^data:(image\/[\w.+-]+);base64,(.+)$/); if (!mm) return json({ error: 'Неверное изображение' }, 400, extCors(origin)); }
     const run = async (onText) => {
       if (mm) {
-        const client = await getClient();
-        const stream = client.messages.stream({ model: FAST_MODEL, max_tokens: 2500, system: EXT_PERSONA + '\n\nПользователь прислал фото. Если это товар — оцени его глазами покупателя, подскажи цену, заголовок и как лучше снять и подать объявление. Если скриншот — разбери, что на нём, с точки зрения продаж.',
-          messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: mm[1], data: mm[2] } }, { type: 'text', text: message || 'Что на фото? Оцени товар.' }] }] });
-        stream.on('text', (_d, snap) => onText(snap));
-        const r = await stream.finalMessage();
-        return r.content.filter((x) => x.type === 'text').map((x) => x.text).join('\n').trim();
+        const { text } = await askClaudeStream({ model: FAST_MODEL, maxTokens: 2500, effort: 'low',
+          system: EXT_PERSONA + '\n\nПользователь прислал фото. Если это товар — оцени его глазами покупателя, подскажи цену, заголовок и как лучше снять и подать объявление. Если скриншот — разбери, что на нём, с точки зрения продаж.',
+          content: [{ type: 'image', source: { type: 'base64', media_type: mm[1], data: mm[2] } }, { type: 'text', text: message || 'Что на фото? Оцени товар.' }], onText });
+        return text;
       }
       if (report) return answerMarket(message, report, { history, onText, system: EXT_PERSONA + '\n\nУ тебя есть свежая выдача Авито по теме пользователя (данные ниже). Ответь на вопрос, опираясь на эти данные. В конце — строка «Следующий шаг».', model: FAST_MODEL, effort: 'low' });
       return (await askClaudeStream({ system: EXT_PERSONA + '\n\nДанных выдачи сейчас нет. Отвечай из опыта рынка Авито; если для точного ответа нужны цифры — предложи написать товар, и ты соберёшь и разберёт выдачу.', messages: toMessages(history, message), model: FAST_MODEL, effort: 'low', maxTokens: 4000, onText })).text;

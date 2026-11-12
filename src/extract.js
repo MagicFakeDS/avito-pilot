@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { getClient, MODEL } from './claude.js';
+import { askClaudeJSON, MODEL } from './claude.js';
 
 const MAX_TEXT = 200_000;
 export const PAGE_SIZE = 50;
@@ -73,34 +73,17 @@ export async function extractListings(rawText) {
   if (text.length < 50) throw httpError('Текст слишком короткий — скопируйте всю страницу выдачи (Ctrl+A, Ctrl+C)', 400);
   if (text.length > MAX_TEXT) throw httpError('Текст слишком большой — вставляйте по одной странице выдачи', 413);
 
-  const client = await getClient();
-
-  const stream = client.beta.messages.stream({
-    model: MODEL,
-    max_tokens: 32000,
-    thinking: { type: 'adaptive' },
-    output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
-    system: SYSTEM,
-    messages: [{ role: 'user', content: text }],
-  });
-  const message = await stream.finalMessage();
-
-  if (message.stop_reason === 'refusal') throw httpError('Модель отказалась разбирать этот текст', 422);
-  if (message.stop_reason === 'max_tokens') throw httpError('Страница слишком длинная для одного разбора', 413);
-  const json = message.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
   let data;
   try {
-    data = JSON.parse(json);
-  } catch {
-    throw httpError('Модель вернула некорректный JSON', 502);
+    data = await askClaudeJSON({ system: SYSTEM, content: text, schema: SCHEMA, effort: 'low', maxTokens: 32000, model: MODEL });
+  } catch (err) {
+    if (/JSON/i.test(err.message || '')) throw httpError('Модель вернула некорректный JSON', 502);
+    throw httpError(err.message || 'Модель не разобрала текст', 422);
   }
   return {
     query: data.query || '',
     totalOnSite: data.totalOnSite ?? null,
-    items: data.items.map(normalize),
-    usage: message.usage,
+    items: (data.items || []).map(normalize),
   };
 }
 

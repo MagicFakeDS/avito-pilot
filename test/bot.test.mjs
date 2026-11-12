@@ -226,7 +226,7 @@ await t.click('csv');
 assert.ok(t.calls.some((c) => c.method === 'sendDocument'));
 await t.click('table');
 assert.equal(t.last().method, 'sendRichMessage');
-assert.match(t.texts().at(-1), /\| # \| Объявление \| Цена \| Продавец \|/, 'таблица объявлений');
+assert.match(t.texts().at(-1), /\| # \| Объявление \| Цена \|.*\| Продавец \|/, 'таблица объявлений');
 await t.click('more');
 await wait(60);
 assert.equal(fetchCalls.at(-1).fromPage, 2, 'догрузка со следующей страницы');
@@ -259,7 +259,7 @@ assert.deepEqual(data(t.lastButtons()), [`use:${id1}`, 'csv', `ctbl:${id1}`]);
 
 await t.click(`ctbl:${id1}`);
 assert.equal(t.last().method, 'editMessageText');
-assert.match(t.texts().at(-1), /\| # \| Объявление \| Цена \| Продавец \|/);
+assert.match(t.texts().at(-1), /\| # \| Объявление \| Цена \|.*\| Продавец \|/);
 assert.deepEqual(data(t.lastButtons()), [`use:${id1}`]);
 
 await t.click(`hist:${id1}`);

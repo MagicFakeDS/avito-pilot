@@ -1,4 +1,4 @@
-import { askClaude, getClient } from './claude.js';
+import { askClaude, askClaudeStream, FAST_MODEL } from './claude.js';
 
 const SYSTEM = `Ты аналитик рынка Авито. Тебе дают агрегированную статистику по поисковой выдаче
 и выборку объявлений. Напиши короткий практичный разбор для продавца, который хочет
@@ -67,18 +67,11 @@ const EXT_INSIGHTS_SYSTEM = EXT_PERSONA + `
 ### Продвижение — нужно ли платить за продвижение или рекламу на этой площадке и как (по доле продвинутых/рекламных в выдаче).
 ### Следующий шаг — одна строка: что я могу сделать дальше (например: «Могу открыть топ-3 конкурентов и разобрать их карточки и отзывы»).`;
 
-export const FAST_MODEL = process.env.EXT_FAST_MODEL || 'claude-sonnet-5-5';
+export { FAST_MODEL };
 export async function streamInsights(report, stats, onText, leaders = [], siteName = '') {
-  const c = await getClient();
-  const stream = c.messages.stream({
-    model: FAST_MODEL, max_tokens: 4000, thinking: { type: 'adaptive' }, output_config: { effort: 'low' },
-    system: EXT_INSIGHTS_SYSTEM, messages: [{ role: 'user', content: (siteName ? 'Площадка: ' + siteName + '\n\n' : '') + promptOf(report, stats, sampleOf(report).slice(0, 60)) + (leaders.length ? `\n\nЛидеры выдачи — карточки прочитаны полностью (описание, просмотры всего/сегодня, дата публикации, продавец):\n${JSON.stringify(leaders)}` : '') }],
-  });
-  stream.on('text', (_d, snap) => onText(snap));
-  const msg = await stream.finalMessage();
-  const text = msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
-  if (!text) throw new Error('Пустой ответ модели');
-  return { text, model: msg.model, createdAt: new Date().toISOString() };
+  const content = (siteName ? 'Площадка: ' + siteName + '\n\n' : '') + promptOf(report, stats, sampleOf(report).slice(0, 60)) + (leaders.length ? `\n\nЛидеры выдачи — карточки прочитаны полностью (описание, просмотры всего/сегодня, дата публикации, продавец):\n${JSON.stringify(leaders)}` : '');
+  const { text, model } = await askClaudeStream({ system: EXT_INSIGHTS_SYSTEM, content, model: FAST_MODEL, effort: 'low', maxTokens: 4000, onText });
+  return { text, model, createdAt: new Date().toISOString() };
 }
 
 export function viewStats(items) {
@@ -164,14 +157,9 @@ const DEMAND_SYSTEM = EXT_PERSONA + `
 ### Что цепляет — слова и подачи, которые дают больше просмотров; продвижение окупается или нет.
 ### Следующий шаг — одна строка.`;
 export async function streamDemand(report, stats, onText, siteName = '', note = '') {
-  const c = await getClient();
   const top = Object.values(report.items).filter((i) => Number.isFinite(i.views)).sort((a, b) => (b.viewsToday || 0) - (a.viewsToday || 0)).slice(0, 25)
     .map((i) => ({ title: i.title, price: i.price, views: i.views, today: i.viewsToday, published: i.publishedAt ? i.publishedAt.slice(0, 10) : undefined, promoted: i.promoted || undefined }));
-  const stream = c.messages.stream({
-    model: FAST_MODEL, max_tokens: 2500, thinking: { type: 'adaptive' }, output_config: { effort: 'low' }, system: DEMAND_SYSTEM,
-    messages: [{ role: 'user', content: (note ? note + '\n' : '') + (siteName ? 'Площадка: ' + siteName + '\n' : '') + 'Отчёт «' + report.name + '».\n\nviews:\n' + JSON.stringify(stats.views) + '\n\ndeep:\n' + JSON.stringify(stats.deep) + '\n\nТоп по просмотрам сегодня:\n' + JSON.stringify(top) }],
-  });
-  stream.on('text', (_d, snap) => onText(snap));
-  const msg = await stream.finalMessage();
-  return msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+  const content = (note ? note + '\n' : '') + (siteName ? 'Площадка: ' + siteName + '\n' : '') + 'Отчёт «' + report.name + '».\n\nviews:\n' + JSON.stringify(stats.views) + '\n\ndeep:\n' + JSON.stringify(stats.deep) + '\n\nТоп по просмотрам сегодня:\n' + JSON.stringify(top);
+  const { text } = await askClaudeStream({ system: DEMAND_SYSTEM, content, model: FAST_MODEL, effort: 'low', maxTokens: 2500, onText });
+  return text;
 }

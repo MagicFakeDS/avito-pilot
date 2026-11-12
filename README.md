@@ -56,6 +56,23 @@ npm start
 | `PORT` / `HOST` | `3000` / `127.0.0.1` | где слушает сайт |
 | `DB_FILE` | `data/db.json` | файл с данными |
 
+## Нейросеть (Claude или ChatGPT)
+
+По умолчанию используется **Claude** (`@anthropic-ai/sdk`). Можно переключить на
+любой **OpenAI-совместимый** провайдер — ChatGPT, а также OpenRouter, DeepSeek,
+Groq, локальные модели и т.п. — через `.env`:
+
+```bash
+AI_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+# OPENAI_BASE_URL=https://api.openai.com/v1   # OpenRouter: https://openrouter.ai/api/v1
+# OPENAI_MODEL=gpt-4o
+# OPENAI_FAST_MODEL=gpt-4o-mini
+```
+
+Весь анализ, тексты, structured-JSON, работа с картинками и агент-режим работают
+через единый слой (`src/claude.js`), так что провайдер меняется одной переменной.
+
 ## Загрузка по ссылке (опционально)
 
 У Авито сильная защита от ботов. Чтобы заходы были стабильными:
